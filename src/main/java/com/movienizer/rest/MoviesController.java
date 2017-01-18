@@ -101,7 +101,6 @@ public class MoviesController {
 			countries.addAll(movie.getCountries());
 			studios.addAll(movie.getStudios());
 		}
-    	private_prepareMovieSearchCache();
 		private_preparePersonSearchCache();
 		for (IMoviePersonRelation relation:private_getMoviePersonRelations()) {
 			if (IMoviePersonRelation.roles.Directors.name().equals(relation.getRole())) {
@@ -113,6 +112,7 @@ public class MoviesController {
 						new ActorInMovie(personById.get(relation.getPersonId()), relation.getCharacterName(), relation.getSort_Order()));
 			}
 		}
+    	private_prepareMovieSearchCache();
 		System.out.println("Data initialization took "+(System.currentTimeMillis()-start)/1000f+" seconds.");
 	}
 
@@ -386,6 +386,15 @@ public class MoviesController {
                         }
                         for (String item:movie.getStudios()) {
                             document.add(new Field(ALL_TEXT_FIELDS, item, titleType));
+                        }
+                        for (IPerson item:movie.getDirectors()) {
+                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
+                        }
+                        for (IPerson item:movie.getWriters()) {
+                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
+                        }
+                        for (IPerson item:movie.getActors()) {
+                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
                         }
                         writer.addDocument(document);
                     }
