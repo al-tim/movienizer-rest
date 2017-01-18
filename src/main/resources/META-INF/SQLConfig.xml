@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SQLConfig>
+  <sqlSet name="Movies">
+    <retrievalSQL key="getAllMoviesInCollection">
+      <![CDATA[
+        SELECT Movies.Code AS Id, Title, Original_Title, Year, Description, Duration, IMDB_Rating, Salary Budget, Awards, Movies_Codes.Rating Kinopoisk_Rating, Site
+           FROM Movies, Movies_Codes
+           WHERE In_Collection=1
+             AND Movie=Movies.Code
+	         AND Script='kinopoisk'
+	         AND Movies_Codes.Rating IS NOT NULL
+	    ORDER BY Title
+      ]]>
+    </retrievalSQL>
+    <retrievalSQL key="getAllPersonsInCollection">
+      <![CDATA[
+        SELECT Persons.Code Id, Name, Original_Name, Birth_Date, Birthplace, Height, Biography, Awards, Site
+          FROM Persons, Persons_Codes
+          WHERE In_Collection=1
+             AND Person=Persons.Code
+	         AND Script='kinopoisk'
+	         AND Persons_Codes.Rating IS NOT NULL
+		ORDER BY Name
+      ]]>
+    </retrievalSQL>
+    <retrievalSQL key="getMoviePersonRelations">
+      <![CDATA[
+        SELECT Movies.Code MovieId, Persons.Code PersonId, Modes.Name Role, NULL CharacterName, NULL Sort_Order
+          FROM Movies, Data, Persons, Modes
+          WHERE Movies.In_Collection=1
+             AND Persons.In_Collection=1
+			 AND Movie=Movies.Code
+             AND Person=Persons.Code
+	         AND Modes.Code=Mode--112102
+			 AND Modes.Code IN (1, 2)
+        UNION ALL
+		SELECT Movies.Code MovieId, Persons.Code PersonId, 'Actors' Role, Characters.Name CharacterName, Sort_Order
+          FROM Movies, Characters, Persons
+          WHERE Movies.In_Collection=1
+             AND Persons.In_Collection=1
+			 AND Movie=Movies.Code
+             AND Person=Persons.Code
+      ]]>
+    </retrievalSQL>
+    <retrievalSQL key="getMovieCharacteristics">
+      <![CDATA[
+        SELECT Movies.Code MovieId, Movies_Manuals.Reference Category, Manuals.Code CharactersticId, Manuals.Name CharactersticValue 
+          FROM Movies, Movies_Manuals, Manuals
+          WHERE Movies.In_Collection=1
+             AND Movie=Movies.Code
+             AND Ref_Code=Manuals.Code
+			 AND Movies_Manuals.Reference IN (8, 9, 12)-- 8 - Genre, 9 - Country, 12 - Studio
+			 AND Manuals.Reference IN (8, 9, 12)-- 8 - Genre, 9 - Country, 12 - Studio
+			 AND Movies_Manuals.Reference=Manuals.Reference
+      ]]>
+    </retrievalSQL>
+  </sqlSet>
+</SQLConfig>
