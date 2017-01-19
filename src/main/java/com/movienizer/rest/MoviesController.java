@@ -24,7 +24,6 @@ import org.apache.lucene.analysis.ru.RussianAnalyzer;
 import org.apache.lucene.analysis.snowball.SnowballFilter;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
@@ -372,7 +371,6 @@ public class MoviesController {
                         document.add(new Field(IMovie.fields.Id.name(), movie.getId().toString(), idFieldType));
                         document.add(new Field(IMovie.fields.Title.name(), movie.getTitle(), titleType));
                         document.add(new Field(IMovie.fields.Original_Title.name(), movie.getOriginal_Title(), titleType));
-                        document.add(new Field(IMovie.fields.Description.name(), movie.getDescription(), titleType));
                         document.add(new Field(ALL_TEXT_FIELDS, movie.getTitle(), titleType));
                         document.add(new Field(ALL_TEXT_FIELDS, movie.getOriginal_Title(), titleType));
                         document.add(new Field(ALL_TEXT_FIELDS, movie.getDescription(), titleType));
@@ -446,12 +444,9 @@ public class MoviesController {
         List<String> tokens = new ArrayList<String>();
         if (!StringUtils.isEmpty(searchString)) {
 	        TokenStream tokenStream = getLuceneAnalyzer().tokenStream(fieldName, searchString);
-	        OffsetAttribute offsetAttribute = tokenStream.addAttribute(OffsetAttribute.class);
 	        CharTermAttribute charTermAttribute = tokenStream.addAttribute(CharTermAttribute.class);
 	        tokenStream.reset();
 	        while (tokenStream.incrementToken()) {
-	            int startOffset = offsetAttribute.startOffset();
-	            int endOffset = offsetAttribute.endOffset();
 	            tokens.add(charTermAttribute.toString());
 	        }
         }
@@ -476,9 +471,9 @@ public class MoviesController {
         return new ObjectMapper().writeValueAsString(private_movieSearch(IMovie.fields.Title.name(), searchString, lookupSize));
     }
 
-    @RequestMapping(value = "/search/by-description", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
+    @RequestMapping(value = "/search/by-original-title", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
     public @ResponseBody String searchMovieByDescription(@RequestParam("lookup") String searchString, @RequestParam(value="lookupSize", required=false, defaultValue=LOOKUPSIZE_DEFAULT) Integer lookupSize) throws DataAccessException, ConfigException, IOException, ParseException {
-        return new ObjectMapper().writeValueAsString(private_movieSearch(IMovie.fields.Description.name(), searchString, lookupSize));
+        return new ObjectMapper().writeValueAsString(private_movieSearch(IMovie.fields.Original_Title.name(), searchString, lookupSize));
     }
 
     @RequestMapping(value = "/search/by-all-text-fields", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
