@@ -1,5 +1,7 @@
 package com.movienizer.data.model;
 
+import java.util.SortedSet;
+
 public class ActorInMovie implements IActorInMovie {
 	private String character;
 	private Long sort_Order;
@@ -64,5 +66,10 @@ public class ActorInMovie implements IActorInMovie {
 	@Override
 	public Long getSort_Order() {
 		return sort_Order;
+	}
+
+	@Override
+	public SortedSet<IImage> getPhotos() {
+		return encapsulatedActor.getPhotos();
 	}
 }

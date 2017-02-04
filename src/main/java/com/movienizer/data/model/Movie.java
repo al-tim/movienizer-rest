@@ -24,6 +24,38 @@ public class Movie extends AbstractMovie {
 	private SortedSet<String> genres = new TreeSet<String>();
 	private SortedSet<String> countries = new TreeSet<String>();
 	private SortedSet<String> studios = new TreeSet<String>();
+	private SortedSet<IImage> imageFrontCovers = new TreeSet<IImage>();
+	private SortedSet<IImage> imageScreenshots = new TreeSet<IImage>();
+	private SortedSet<IImage> imagePosters = new TreeSet<IImage>();
+	private SortedSet<IImage> imageBackdrops = new TreeSet<IImage>();
+
+	public Movie() {}
+
+	public static Movie getNewInstance(IMovie copyFrom) {
+		Movie newInstance = new Movie();
+		newInstance.id = copyFrom.getId();
+		newInstance.title = copyFrom.getTitle();
+		newInstance.original_Title = copyFrom.getOriginal_Title();
+		newInstance.year = copyFrom.getYear();
+		newInstance.description = copyFrom.getDescription();
+		newInstance.duration = copyFrom.getDuration();
+		newInstance.IMDB_Rating = copyFrom.getIMDB_Rating();
+		newInstance.budget = copyFrom.getBudget();
+		newInstance.awards = copyFrom.getAwards();
+		newInstance.kinopoisk_Rating = copyFrom.getKinopoisk_Rating();
+		newInstance.site = copyFrom.getSite();
+		newInstance.directors = copyFrom.getDirectors();
+		newInstance.writers = copyFrom.getWriters();
+		newInstance.actors = copyFrom.getActors();
+		newInstance.genres = copyFrom.getGenres();
+		newInstance.countries = copyFrom.getCountries();
+		newInstance.studios = copyFrom.getStudios();
+		newInstance.imageFrontCovers = copyFrom.getImageFrontCovers();
+		newInstance.imageScreenshots = copyFrom.getImageScreenshots();
+		newInstance.imagePosters = copyFrom.getImagePosters();
+		newInstance.imageBackdrops = copyFrom.getImageBackdrops();
+		return newInstance;
+	}
 
 	@Override
 	public Long getId() {
@@ -153,5 +185,25 @@ public class Movie extends AbstractMovie {
 	@Override
 	public SortedSet<String> getStudios() {
 		return studios;
+	}
+
+	@Override
+	public SortedSet<IImage> getImageFrontCovers() {
+		return imageFrontCovers;
+	}
+
+	@Override
+	public SortedSet<IImage> getImageScreenshots() {
+		return imageScreenshots;
+	}
+
+	@Override
+	public SortedSet<IImage> getImagePosters() {
+		return imagePosters;
+	}
+
+	@Override
+	public SortedSet<IImage> getImageBackdrops() {
+		return imageBackdrops;
 	}
 }

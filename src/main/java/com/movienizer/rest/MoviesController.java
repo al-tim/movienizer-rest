@@ -38,6 +38,12 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldDocs;
+import org.apache.lucene.search.highlight.Highlighter;
+import org.apache.lucene.search.highlight.InvalidTokenOffsetsException;
+import org.apache.lucene.search.highlight.QueryScorer;
+import org.apache.lucene.search.highlight.SimpleFragmenter;
+import org.apache.lucene.search.highlight.SimpleHTMLFormatter;
+import org.apache.lucene.search.highlight.TokenSources;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.IOUtils;
@@ -60,10 +66,13 @@ import com.movienizer.data.model.IActorInMovie;
 import com.movienizer.data.model.IMovie;
 import com.movienizer.data.model.IMoviePersonRelation;
 import com.movienizer.data.model.IPerson;
+import com.movienizer.data.model.IPersonFullSummary;
 import com.movienizer.data.model.Movie;
+import com.movienizer.data.model.Movie4PersonFullSummary;
 import com.movienizer.data.model.MoviesFilterRanges;
 import com.movienizer.data.model.Page;
 import com.movienizer.data.model.Page4TokenizedSearch;
+import com.movienizer.data.model.PersonFullSummary;
 import com.movienizer.data.model.ScoredMovie;
 
 @RestController
@@ -80,6 +89,7 @@ public class MoviesController {
 	private Map<Long, Set<Long>> personIdSetByMovieId = new HashMap<Long, Set<Long>>();
     private Map<Long, IMovie> movieById = new HashMap<Long, IMovie>();
     private Map<Long, IPerson> personById = new HashMap<Long, IPerson>();
+    private Map<Long, IPersonFullSummary> personFullSummaryById = new HashMap<Long, IPersonFullSummary>();
     private SortedSet<String> genres = new TreeSet<String>();
     private SortedSet<String> countries = new TreeSet<String>();
     private SortedSet<String> studios = new TreeSet<String>();
@@ -89,6 +99,7 @@ public class MoviesController {
 		long start = System.currentTimeMillis();
     	private_getMovies();
 		movieDAO.populateMovieCharacteristics(movieById);
+		movieDAO.populateMovieImages(movieById);
 		for (IMovie movie:private_getMovies()) {
 			Collections.sort(movie.getActors(), new Comparator<IActorInMovie>() {
 				@Override
@@ -101,14 +112,23 @@ public class MoviesController {
 			studios.addAll(movie.getStudios());
 		}
 		private_preparePersonSearchCache();
+		movieDAO.populatePersonImages(personById);
+		for (IPerson person:personById.values()) {
+			personFullSummaryById.put(person.getId(), new PersonFullSummary(person));
+		}
 		for (IMoviePersonRelation relation:private_getMoviePersonRelations()) {
+			IMovie movie = movieById.get(relation.getMovieId());
+			IPerson person = personById.get(relation.getPersonId());
+			IPersonFullSummary personFullSummary = personFullSummaryById.get(relation.getPersonId());
 			if (IMoviePersonRelation.roles.Directors.name().equals(relation.getRole())) {
-				movieById.get(relation.getMovieId()).getDirectors().add(personById.get(relation.getPersonId()));
+				movie.getDirectors().add(person);
+				personFullSummary.getDirectorFor().add(new Movie4PersonFullSummary(movie));
 			} else if (IMoviePersonRelation.roles.Writers.name().equals(relation.getRole())) {
-				movieById.get(relation.getMovieId()).getWriters().add(personById.get(relation.getPersonId()));
+				movie.getWriters().add(person);
+				personFullSummary.getWriterFor().add(new Movie4PersonFullSummary(movie));
 			} else if (IMoviePersonRelation.roles.Actors.name().equals(relation.getRole())) {
-				movieById.get(relation.getMovieId()).getActors().add(
-						new ActorInMovie(personById.get(relation.getPersonId()), relation.getCharacterName(), relation.getSort_Order()));
+				movie.getActors().add(new ActorInMovie(person, relation.getCharacterName(), relation.getSort_Order()));
+				personFullSummary.getActorFor().add(new Movie4PersonFullSummary(movie));
 			}
 		}
     	private_prepareMovieSearchCache();
@@ -164,13 +184,41 @@ public class MoviesController {
         return allMovies;
     }
 
+	@RequestMapping(value = "/all/persons",
+			method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
+    public @ResponseBody String getPersonsInCollection(
+    		@RequestParam(value = "id", required = true) long[] ids) throws DataAccessException, ConfigException, IOException, ParseException {
+    	private_preparePersonSearchCache();
+    	List<IPersonFullSummary> result = new ArrayList<IPersonFullSummary>();
+    	if (ids.length>0) {
+	    	for (int i=0; i<ids.length; i++) {
+	    		result.add(personFullSummaryById.get(ids[i]));
+	    	}
+    	}
+        return new ObjectMapper().writeValueAsString(result);
+    }
+
+	@RequestMapping(value = "/in-collection/by-id",
+			method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
+    public @ResponseBody String getMoviesInCollection(
+    		@RequestParam(value = "id", required = true) long[] ids) throws DataAccessException, ConfigException, IOException, ParseException {
+    	private_prepareMovieSearchCache();
+    	List<IMovie> result = new ArrayList<IMovie>();
+    	if (ids.length>0) {
+	    	for (int i=0; i<ids.length; i++) {
+	    		result.add(movieById.get(ids[i]));
+	    	}
+    	}
+        return new ObjectMapper().writeValueAsString(result);
+    }
+
 	@RequestMapping(value = "/all/persons/in-collection",
 			method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
     public @ResponseBody String getPersonsInCollection(
     		@RequestParam(value = "fromIndex", required = false, defaultValue = "0") int fromIndex,
     		@RequestParam(value = "toIndex", required = false, defaultValue = "10") int toIndex,
     		@RequestParam(value = "name", required = false, defaultValue = "") String name) throws DataAccessException, ConfigException, IOException, ParseException {
-    	List<? extends IPerson> filteredPersons = StringUtils.isEmpty(name) ? private_getPersons(): private_personSearchByName(name, toIndex);
+    	List<? extends IPerson> filteredPersons = StringUtils.isEmpty(name) ? private_getPersons(): private_personSearchByName(getLuceneReadySearchString(name), toIndex);
     	int resultingFromIndex = (fromIndex>=filteredPersons.size()) ? filteredPersons.size() - filteredPersons.size() % (toIndex-fromIndex) : fromIndex;
     	int resultingToIndex = (toIndex>filteredPersons.size()) ? filteredPersons.size() : toIndex;
         return new ObjectMapper().writeValueAsString(
@@ -224,8 +272,11 @@ public class MoviesController {
     		@RequestParam(value = "studiosMatchAll", required = false, defaultValue = "false") boolean studiosMatchAll,
     		@RequestParam(value = "sortFieldName", required = false, defaultValue = "") final String sortFieldName,
     		@RequestParam(value = "sortOrder", required = false, defaultValue = "asc") final String sortOrder,
-    		@RequestParam(value = "globalSearch", required = false) String globalSearchString) throws DataAccessException, ConfigException, IOException, ParseException, InterruptedException {
+    		@RequestParam(value = "globalSearch", required = false) String globalSearchString) throws DataAccessException, ConfigException, IOException, ParseException, InterruptedException, InvalidTokenOffsetsException {
     	private_getMovies();
+    	globalSearchString = getLuceneReadySearchString(globalSearchString);
+    	titleSearch = getLuceneReadySearchString(titleSearch);
+    	originalTitleSearch = getLuceneReadySearchString(originalTitleSearch);
     	//TimeUnit.SECONDS.sleep(2);
     	List<IMovie> filteredMovies = new ArrayList<IMovie>();
     	List<Long> personIdList = new ArrayList<Long>();
@@ -306,10 +357,24 @@ public class MoviesController {
 				});
     		}
     	}
+
+    	List<String> globalSearchTokens = private_getLuceneFullTextSearchTokens(ALL_TEXT_FIELDS, globalSearchString);
+		List<IMovie> searchResults = new ArrayList<IMovie>();
+    	for (IMovie movie:filteredMovies.subList(resultingFromIndex, resultingToIndex)) {
+    		Movie newMovieInstance = Movie.getNewInstance(movie);
+    		if (globalSearchTokens.size()>0) {
+    			newMovieInstance.setTitle(getHighlightedText(getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, movie.getTitle(), globalSearchTokens.size()>0?globalSearchString:""));
+    			newMovieInstance.setOriginal_Title(getHighlightedText(getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, movie.getOriginal_Title(), globalSearchTokens.size()>0?globalSearchString:""));
+    			newMovieInstance.setDescription(getHighlightedText(getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, movie.getDescription(), globalSearchTokens.size()>0?globalSearchString:""));
+    			newMovieInstance.setAwards(getHighlightedText(getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, movie.getAwards(), globalSearchTokens.size()>0?globalSearchString:""));
+    			newMovieInstance.setBudget(getHighlightedText(getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, movie.getBudget(), globalSearchTokens.size()>0?globalSearchString:""));
+    		}
+			searchResults.add(newMovieInstance);
+    	}
     	return new ObjectMapper().writeValueAsString(
         		new Page4TokenizedSearch<List<IMovie>>(
-        				filteredMovies.subList(resultingFromIndex, resultingToIndex), filteredMovies.size(), resultingFromIndex, resultingFromIndex+toIndex-fromIndex,
-        				private_getLuceneTokens(ALL_TEXT_FIELDS, globalSearchString)
+        				searchResults, filteredMovies.size(), resultingFromIndex, resultingFromIndex+toIndex-fromIndex,
+        				private_getLuceneFullTextSearchTokens(ALL_TEXT_FIELDS, globalSearchString)
         		));
     }
 
@@ -339,22 +404,48 @@ public class MoviesController {
         return new ObjectMapper().writeValueAsString(private_getMovies());
     }
 
-    private static Directory movieSearchDirectory = null;
+    private static Directory movieSearchDirectoryFullText = null;
+    private static Directory movieSearchDirectoryStartsWith = null;
 
-    private Analyzer getLuceneAnalyzer() throws IOException {// Get both Russian and English stop words while leaving out stemming
+    private static String getHighlightedText(Analyzer analyzer, String fieldName, String textToHighlight, String searchString) throws ParseException, IOException, InvalidTokenOffsetsException {
+    	QueryScorer queryScorer = new QueryScorer(new QueryParser(fieldName, analyzer).parse(searchString));
+    	Highlighter highlighter =
+    			new Highlighter(
+    					new SimpleHTMLFormatter("<span class=\"highlight\">", "</span>"),
+    					queryScorer);
+    	highlighter.setTextFragmenter(new SimpleFragmenter(Integer.MAX_VALUE));
+        highlighter.setMaxDocCharsToAnalyze(Integer.MAX_VALUE);
+        @SuppressWarnings("deprecation")
+		TokenStream tokenStream = TokenSources.getTokenStream(fieldName, textToHighlight, analyzer);
+        String highlightedText = highlighter.getBestFragment(tokenStream, textToHighlight);
+        tokenStream.close();
+        return highlightedText==null ? textToHighlight : highlightedText;
+    }
+
+    private static Analyzer getLuceneFullTextSearchAnalyzer() throws IOException {// Get both Russian and English stop words while leaving out stemming
     	CharArraySet stopWords = WordlistLoader.getSnowballWordSet(IOUtils.getDecodingReader(SnowballFilter.class, RussianAnalyzer.DEFAULT_STOPWORD_FILE, StandardCharsets.UTF_8));
     	stopWords.addAll(EnglishAnalyzer.getDefaultStopSet());
-    	return new StandardAnalyzer(stopWords);
+    	return new RussianAnalyzer(stopWords);
+    }
+
+    private static Analyzer getLuceneStartsWithAnalyzer() throws IOException {
+    	CharArraySet stopWords = WordlistLoader.getSnowballWordSet(IOUtils.getDecodingReader(SnowballFilter.class, RussianAnalyzer.DEFAULT_STOPWORD_FILE, StandardCharsets.UTF_8));
+    	stopWords.addAll(EnglishAnalyzer.getDefaultStopSet());
+    	return new StandardAnalyzer();
+    }
+
+    private static String getLuceneReadySearchString(String searchString) {
+    	return (StringUtils.isEmpty(searchString))?"":QueryParser.escape(searchString.trim());
     }
 
     private void private_prepareMovieSearchCache() throws IOException, DataAccessException, ConfigException {
     	private_getMovies();
-        if (movieSearchDirectory == null) {
+        if (movieSearchDirectoryFullText == null) {
             synchronized (MoviesController.class) {
-                if (movieSearchDirectory == null) {
-                    Directory newSearchDirectory = new RAMDirectory();
-                    IndexWriter writer = new IndexWriter(newSearchDirectory, new IndexWriterConfig(getLuceneAnalyzer()));
-                    writer.deleteAll();
+                if (movieSearchDirectoryFullText == null) {
+                    Directory newSearchDirectoryFullText = new RAMDirectory();
+                    IndexWriter fullTextWriter = new IndexWriter(newSearchDirectoryFullText, new IndexWriterConfig(getLuceneFullTextSearchAnalyzer()));
+                    fullTextWriter.deleteAll();
 
                     FieldType idFieldType = new FieldType();
                     idFieldType.setStored(true);
@@ -362,53 +453,70 @@ public class MoviesController {
                     idFieldType.setTokenized(false);
 
                     FieldType titleType = new FieldType();
-                    titleType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS);
+                    titleType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS/*DOCS_AND_FREQS_AND_POSITIONS*/);
                     titleType.setTokenized(true);
                     titleType.setStored(false);
 
                     for (IMovie movie:private_getMovies()) {
-                        Document document = new Document();
-                        document.add(new Field(IMovie.fields.Id.name(), movie.getId().toString(), idFieldType));
-                        document.add(new Field(IMovie.fields.Title.name(), movie.getTitle(), titleType));
-                        document.add(new Field(IMovie.fields.Original_Title.name(), movie.getOriginal_Title(), titleType));
-                        document.add(new Field(ALL_TEXT_FIELDS, movie.getTitle(), titleType));
-                        document.add(new Field(ALL_TEXT_FIELDS, movie.getOriginal_Title(), titleType));
-                        document.add(new Field(ALL_TEXT_FIELDS, movie.getDescription(), titleType));
-                        document.add(new Field(ALL_TEXT_FIELDS, movie.getAwards(), titleType));
-                        document.add(new Field(ALL_TEXT_FIELDS, movie.getBudget(), titleType));
+                        Document allTextFieldsDocument = new Document();
+                        allTextFieldsDocument.add(new Field(IMovie.fields.Id.name(), movie.getId().toString(), idFieldType));
+                        allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, movie.getTitle(), titleType));
+                        allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, movie.getOriginal_Title(), titleType));
+                        allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, movie.getDescription(), titleType));
+                        allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, movie.getAwards(), titleType));
+                        allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, movie.getBudget(), titleType));
                         for (String item:movie.getGenres()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item, titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item, titleType));
                         }
                         for (String item:movie.getCountries()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item, titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item, titleType));
                         }
                         for (String item:movie.getStudios()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item, titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item, titleType));
                         }
                         for (IPerson item:movie.getDirectors()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
                         }
                         for (IPerson item:movie.getWriters()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
                         }
                         for (IPerson item:movie.getActors()) {
-                            document.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
+                            allTextFieldsDocument.add(new Field(ALL_TEXT_FIELDS, item.getName(), titleType));
                         }
-                        writer.addDocument(document);
+                        fullTextWriter.addDocument(allTextFieldsDocument);
                     }
-                    writer.close();
-                    movieSearchDirectory = newSearchDirectory;
+                    fullTextWriter.close();
+
+                    Directory newSearchDirectoryStartsWith = new RAMDirectory();
+                    IndexWriter startsWithWriter = new IndexWriter(newSearchDirectoryStartsWith, new IndexWriterConfig(getLuceneStartsWithAnalyzer()));
+                    startsWithWriter.deleteAll();
+
+                    for (IMovie movie:private_getMovies()) {
+                    	Document titleFieldDocument = new Document();
+                        titleFieldDocument.add(new Field(IMovie.fields.Id.name(), movie.getId().toString(), idFieldType));
+                    	titleFieldDocument.add(new Field(IMovie.fields.Title.name(), movie.getTitle(), titleType));
+                        startsWithWriter.addDocument(titleFieldDocument);
+
+                    	Document originalTitleFieldDocument = new Document();
+                        originalTitleFieldDocument.add(new Field(IMovie.fields.Id.name(), movie.getId().toString(), idFieldType));
+                        originalTitleFieldDocument.add(new Field(IMovie.fields.Original_Title.name(), movie.getOriginal_Title(), titleType));
+                        startsWithWriter.addDocument(originalTitleFieldDocument);
+                    }
+                    startsWithWriter.close();
+
+                    movieSearchDirectoryFullText = newSearchDirectoryFullText;
+                    movieSearchDirectoryStartsWith = newSearchDirectoryStartsWith;
                 }
             }
         }
     }
 
-    private List<? extends IMovie> private_movieSearch(String [] searchFields, String [] searchFieldValues) throws DataAccessException, IOException, ConfigException, ParseException {
+    private List<? extends IMovie> private_movieSearch(Directory[] directories, Analyzer[] analyzers, String[] searchFields, String[] searchFieldValues) throws DataAccessException, IOException, ConfigException, ParseException {
     	int matchCount = 0;
     	Map<Long, ScoredMovie> filteredMoviesById = new HashMap<Long, ScoredMovie>();
     	for (int i=0; i<searchFields.length; i++) {
 	    	if (!StringUtils.isEmpty(searchFieldValues[i])) {
-	    		List<ScoredMovie> filteredMovies = private_movieSearch(searchFields[i], searchFieldValues[i], allMovies.size());
+	    		List<ScoredMovie> filteredMovies = private_movieSearch(directories[i], analyzers[i], searchFields[i], searchFieldValues[i], allMovies.size());
 	    		for (ScoredMovie movie:filteredMovies) {
 	    			ScoredMovie scoredMovie = filteredMoviesById.get(movie.getId());
 	    			if (scoredMovie == null) {
@@ -435,28 +543,55 @@ public class MoviesController {
     }
 
     private List<? extends IMovie> private_movieSearch(String globalSearch, String titleSearch, String originalTitleSearch) throws DataAccessException, IOException, ConfigException, ParseException {
-		String [] searchFields = {ALL_TEXT_FIELDS, Movie.fields.Title.name(), Movie.fields.Original_Title.name()};
-		String [] searchFieldValues = {globalSearch, titleSearch, originalTitleSearch};
-		return private_movieSearch(searchFields, searchFieldValues);
+    	List<String> globalSearchTokens = private_getLuceneFullTextSearchTokens(ALL_TEXT_FIELDS, globalSearch);
+    	titleSearch = private_getLuceneStartsWithSearchString(IMovie.fields.Title.name(), titleSearch);
+		originalTitleSearch = private_getLuceneStartsWithSearchString(IMovie.fields.Original_Title.name(), originalTitleSearch);
+		Analyzer startsWithAnalyzer = getLuceneStartsWithAnalyzer();
+		Analyzer[] analyzers = {getLuceneFullTextSearchAnalyzer(), startsWithAnalyzer, startsWithAnalyzer};
+		Directory[] directories = {movieSearchDirectoryFullText, movieSearchDirectoryStartsWith, movieSearchDirectoryStartsWith};
+		String[] searchFields = {ALL_TEXT_FIELDS, Movie.fields.Title.name(), Movie.fields.Original_Title.name()};
+		String[] searchFieldValues = {globalSearchTokens.size()>0?globalSearch:"", titleSearch, originalTitleSearch};
+		return private_movieSearch(directories, analyzers, searchFields, searchFieldValues);
     }
 
-    private List<String> private_getLuceneTokens(String fieldName, String searchString) throws IOException {
+    private List<String> private_getLuceneAnalyzerTokens(Analyzer analyzer, String fieldName, String searchString) throws IOException {
         List<String> tokens = new ArrayList<String>();
         if (!StringUtils.isEmpty(searchString)) {
-	        TokenStream tokenStream = getLuceneAnalyzer().tokenStream(fieldName, searchString);
+	        TokenStream tokenStream = analyzer.tokenStream(fieldName, searchString);
 	        CharTermAttribute charTermAttribute = tokenStream.addAttribute(CharTermAttribute.class);
 	        tokenStream.reset();
 	        while (tokenStream.incrementToken()) {
 	            tokens.add(charTermAttribute.toString());
 	        }
+	        tokenStream.reset();
         }
         return tokens;
     }
 
-    private List<ScoredMovie> private_movieSearch(String fieldName, String searchString, Integer lookupSize) throws IOException, DataAccessException, ConfigException, ParseException {
+    private List<String> private_getLuceneFullTextSearchTokens(String fieldName, String searchString) throws IOException {
+    	return private_getLuceneAnalyzerTokens(getLuceneFullTextSearchAnalyzer(), fieldName, searchString);
+    }
+
+    private List<String> private_getLuceneStartsWithTokens(String fieldName, String searchString) throws IOException {
+    	return private_getLuceneAnalyzerTokens(getLuceneStartsWithAnalyzer(), fieldName, searchString);
+    }
+
+    private String private_getLuceneStartsWithSearchString(String fieldName, String searchString) throws IOException {
+    	List<String> searchTokens = private_getLuceneStartsWithTokens(fieldName, searchString);
+    	StringBuilder searchStringBuilder = new StringBuilder();
+    	for (int i=0; i<searchTokens.size(); i++) {
+    		searchStringBuilder.append(searchTokens.get(i)).append("*");
+    		if (i != searchTokens.size()-1) {
+    			searchStringBuilder.append(" ");
+    		}
+    	}
+    	return searchStringBuilder.toString();
+    }
+
+    private List<ScoredMovie> private_movieSearch(Directory searchDirectory, Analyzer analizer, String fieldName, String searchString, Integer lookupSize) throws IOException, DataAccessException, ConfigException, ParseException {
         private_prepareMovieSearchCache();
-        IndexSearcher searcher = new IndexSearcher(DirectoryReader.open(movieSearchDirectory));
-        TopFieldDocs hits = searcher.search(new QueryParser(fieldName, getLuceneAnalyzer()).parse(searchString.trim()+"*"), lookupSize, Sort.RELEVANCE, true, false);
+        IndexSearcher searcher = new IndexSearcher(DirectoryReader.open(searchDirectory));
+        TopFieldDocs hits = searcher.search(new QueryParser(fieldName, analizer).parse(searchString), lookupSize, Sort.RELEVANCE, true, false);
         List<ScoredMovie> foundMovies = new ArrayList<ScoredMovie>();
         for (ScoreDoc scoreDocument:hits.scoreDocs) {
         	ScoredMovie movie = new ScoredMovie(movieById.get(new Long(searcher.doc(scoreDocument.doc).get(IMovie.fields.Id.name()))));
@@ -468,17 +603,17 @@ public class MoviesController {
 
     @RequestMapping(value = "/search/by-title", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
     public @ResponseBody String searchMovieByTitle(@RequestParam("lookup") String searchString, @RequestParam(value="lookupSize", required=false, defaultValue=LOOKUPSIZE_DEFAULT) Integer lookupSize) throws DataAccessException, ConfigException, IOException, ParseException {
-        return new ObjectMapper().writeValueAsString(private_movieSearch(IMovie.fields.Title.name(), searchString, lookupSize));
+        return new ObjectMapper().writeValueAsString(private_movieSearch(movieSearchDirectoryStartsWith, getLuceneStartsWithAnalyzer(), IMovie.fields.Title.name(), getLuceneReadySearchString(searchString), lookupSize));
     }
 
     @RequestMapping(value = "/search/by-original-title", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
     public @ResponseBody String searchMovieByDescription(@RequestParam("lookup") String searchString, @RequestParam(value="lookupSize", required=false, defaultValue=LOOKUPSIZE_DEFAULT) Integer lookupSize) throws DataAccessException, ConfigException, IOException, ParseException {
-        return new ObjectMapper().writeValueAsString(private_movieSearch(IMovie.fields.Original_Title.name(), searchString, lookupSize));
+        return new ObjectMapper().writeValueAsString(private_movieSearch(movieSearchDirectoryStartsWith, getLuceneStartsWithAnalyzer(), IMovie.fields.Original_Title.name(), getLuceneReadySearchString(searchString), lookupSize));
     }
 
     @RequestMapping(value = "/search/by-all-text-fields", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE+";charset=UTF-8")
     public @ResponseBody String searchMovieByAllTextFields(@RequestParam("lookup") String searchString, @RequestParam(value="lookupSize", required=false, defaultValue=LOOKUPSIZE_DEFAULT) Integer lookupSize) throws DataAccessException, ConfigException, IOException, ParseException {
-        return new ObjectMapper().writeValueAsString(private_movieSearch(ALL_TEXT_FIELDS, searchString, lookupSize));
+        return new ObjectMapper().writeValueAsString(private_movieSearch(movieSearchDirectoryFullText, getLuceneFullTextSearchAnalyzer(), ALL_TEXT_FIELDS, getLuceneReadySearchString(searchString), lookupSize));
     }
 
     private static Directory personSearchDirectory = null;
@@ -490,7 +625,7 @@ public class MoviesController {
                 if (personSearchDirectory == null) {
                     Directory newSearchDirectory = new RAMDirectory();
                     personById.clear();
-                    IndexWriter writer = new IndexWriter(newSearchDirectory, new IndexWriterConfig(getLuceneAnalyzer()));
+                    IndexWriter writer = new IndexWriter(newSearchDirectory, new IndexWriterConfig(getLuceneStartsWithAnalyzer()));
                     writer.deleteAll();
 
                     FieldType idFieldType = new FieldType();
@@ -501,7 +636,7 @@ public class MoviesController {
                     FieldType nameType = new FieldType();
                     nameType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS);
                     nameType.setTokenized(true);
-                    nameType.setStored(false);
+                    nameType.setStored(true);
 
                     for (IPerson person:private_getPersons()) {
                     	personById.put(person.getId(), person);
@@ -519,13 +654,18 @@ public class MoviesController {
 
     private List<? extends IPerson> private_personSearchByName(String name, int lookupSize) throws IOException, DataAccessException, ConfigException, ParseException {
     	private_preparePersonSearchCache();
-        IndexSearcher searcher = new IndexSearcher(DirectoryReader.open(personSearchDirectory));
-        TopDocs hits = searcher.search(new QueryParser(IPerson.fields.Name.name(), getLuceneAnalyzer()).parse(name.trim()+"*"), lookupSize, Sort.RELEVANCE, true, false);
-        List<IPerson> foundPersons = new ArrayList<IPerson>();
-        for (ScoreDoc scoreDocument:hits.scoreDocs) {
-        	IPerson person = personById.get(new Long(searcher.doc(scoreDocument.doc).get(IPerson.fields.Id.name())));
-            foundPersons.add(person);
-        }
-        return foundPersons;
+    	name = private_getLuceneStartsWithSearchString(IPerson.fields.Name.name(), name);
+    	if (!StringUtils.isEmpty(name)) {
+	        IndexSearcher searcher = new IndexSearcher(DirectoryReader.open(personSearchDirectory));
+	        TopDocs hits = searcher.search(new QueryParser(IPerson.fields.Name.name(), getLuceneStartsWithAnalyzer()).parse(name), lookupSize, Sort.RELEVANCE, true, false);
+	        List<IPerson> foundPersons = new ArrayList<IPerson>();
+	        for (ScoreDoc scoreDocument:hits.scoreDocs) {
+	        	IPerson person = personById.get(new Long(searcher.doc(scoreDocument.doc).get(IPerson.fields.Id.name())));
+	            foundPersons.add(person);
+	        }
+	        return foundPersons;
+    	} else {
+    		return private_getPersons();
+    	}
     }
 }

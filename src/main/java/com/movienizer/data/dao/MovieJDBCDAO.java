@@ -19,4 +19,8 @@ public interface MovieJDBCDAO {
 	public List<IMoviePersonRelation> getAllMoviePersonRelationsInCollection() throws DataAccessException, ConfigException;
 
 	public void populateMovieCharacteristics(Map<Long, IMovie> movieById) throws DataAccessException, ConfigException;
+
+	public void populateMovieImages(Map<Long, IMovie> movieById) throws DataAccessException, ConfigException;
+
+	public void populatePersonImages(Map<Long, IPerson> personById) throws DataAccessException, ConfigException;
 }

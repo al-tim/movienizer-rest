@@ -24,4 +24,8 @@ public interface IMovie {
 	public SortedSet<String> getGenres();
 	public SortedSet<String> getCountries();
 	public SortedSet<String> getStudios();
+	public SortedSet<IImage> getImageFrontCovers();
+	public SortedSet<IImage> getImageScreenshots();
+	public SortedSet<IImage> getImagePosters();
+	public SortedSet<IImage> getImageBackdrops();
 }

@@ -54,5 +54,26 @@
 			 AND Movies_Manuals.Reference=Manuals.Reference
       ]]>
     </retrievalSQL>
+    <retrievalSQL key="getMovieImages">
+      <![CDATA[
+        SELECT Movies.Code MovieId, Path, Images.Mode Role, Sort_Order
+          FROM Images, Movies
+          WHERE Movies.In_Collection=1
+			 AND Movie=Movies.Code
+			 AND Path IS NOT NULL
+			 AND Length(Trim(Path))>0
+			 AND Images.Mode IN (1, 3, 4, 7)-- 1 - Front Cover, 3 - Screenshot, 4 - Poster, 7 - Backdrop
+      ]]>
+    </retrievalSQL>
+    <retrievalSQL key="getPersonImages">
+      <![CDATA[
+        SELECT Persons.Code PersonId, Path, Sort_Order
+          FROM Images, Persons
+          WHERE Persons.In_Collection=1
+			 AND Person=Persons.Code
+			 AND Path IS NOT NULL
+			 AND Length(Trim(Path))>0
+      ]]>
+    </retrievalSQL>
   </sqlSet>
 </SQLConfig>

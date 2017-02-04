@@ -1,5 +1,8 @@
 package com.movienizer.data.model;
 
+import java.util.SortedSet;
+import java.util.TreeSet;
+
 public class Person implements IPerson {
 
 	private Long id;
@@ -11,6 +14,7 @@ public class Person implements IPerson {
 	private String biography;
 	private String awards;
 	private String site;
+	private SortedSet<IImage> photos = new TreeSet<IImage>();
 
 	@Override
 	public Long getId() {
@@ -91,5 +95,10 @@ public class Person implements IPerson {
 
 	public void setSite(String site) {
 		this.site = site;
+	}
+
+	@Override
+	public SortedSet<IImage> getPhotos() {
+		return photos;
 	}
 }

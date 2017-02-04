@@ -1,5 +1,7 @@
 package com.movienizer.data.model;
 
+import java.util.SortedSet;
+
 public interface IPerson {
 
 	public enum fields{Id, Name, Original_Name, Birth_Date, Birthplace, Height, Biography, Awards, Site};
@@ -21,4 +23,6 @@ public interface IPerson {
 	public String getAwards();
 
 	public String getSite();
+
+	public SortedSet<IImage> getPhotos();
 }

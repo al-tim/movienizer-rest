@@ -127,4 +127,24 @@ public class ScoredMovie extends AbstractMovie {
 	public SortedSet<String> getStudios() {
 		return encapsulatedMovie.getStudios();
 	}
+
+	@Override
+	public SortedSet<IImage> getImageFrontCovers() {
+		return encapsulatedMovie.getImageFrontCovers();
+	}
+
+	@Override
+	public SortedSet<IImage> getImageScreenshots() {
+		return encapsulatedMovie.getImageScreenshots();
+	}
+
+	@Override
+	public SortedSet<IImage> getImagePosters() {
+		return encapsulatedMovie.getImagePosters();
+	}
+
+	@Override
+	public SortedSet<IImage> getImageBackdrops() {
+		return encapsulatedMovie.getImageBackdrops();
+	}
 }
